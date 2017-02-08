@@ -121,47 +121,48 @@ func main() {
 	var bs booking.Service
 	bs = booking.NewService(cargos, locations, handlingEvents, rs)
 	bs = booking.NewLoggingService(log.NewContext(logger).With("component", "booking"), bs)
-	BookServiceInflux := kitinfluxdb.New(map[string]string{"namespace": "api", "subsystem": "booking_service"}, stdinfluxdb.BatchPointsConfig{
+	bookServiceInflux := kitinfluxdb.New(map[string]string{"namespace": "api", "subsystem": "booking_service"}, stdinfluxdb.BatchPointsConfig{
 		Database:  "goddd",
 		Precision: "s",
 	}, log.NewNopLogger())
+	bsStore := booking.NewStore(bookServiceInflux, &client)
 	bs = booking.NewInstrumentingService(
-		BookServiceInflux.NewCounter("request_count"),
-		BookServiceInflux.NewHistogram("request_latency_microseconds"),
+		bookServiceInflux.NewCounter("request_count"),
+		bookServiceInflux.NewHistogram("request_latency_microseconds"),
 		bs,
+		bsStore,
 	)
-	err = BookServiceInflux.WriteTo(client)
-	if err != nil {
-		fmt.Printf("Error of BookServiceInflux is %s \n\n", err.Error())
-	}
 
 	var ts tracking.Service
-	TrackingServiceInflux := kitinfluxdb.New(map[string]string{"namespace": "api", "subsystem": "tracking_service"}, stdinfluxdb.BatchPointsConfig{
+	trackingServiceInflux := kitinfluxdb.New(map[string]string{"namespace": "api", "subsystem": "tracking_service"}, stdinfluxdb.BatchPointsConfig{
 		Database:  "goddd",
 		Precision: "s",
 	}, log.NewNopLogger())
+	tsStore := tracking.NewStore(trackingServiceInflux, &client)
 	ts = tracking.NewService(cargos, handlingEvents)
 	ts = tracking.NewLoggingService(log.NewContext(logger).With("component", "tracking"), ts)
 	ts = tracking.NewInstrumentingService(
-		TrackingServiceInflux.NewCounter("request_count"),
-		TrackingServiceInflux.NewHistogram("request_latency_microseconds"),
+		trackingServiceInflux.NewCounter("request_count"),
+		trackingServiceInflux.NewHistogram("request_latency_microseconds"),
 		ts,
+		tsStore,
 	)
-	TrackingServiceInflux.WriteTo(client)
 
 	var hs handling.Service
-	HandlingServiceInflux := kitinfluxdb.New(map[string]string{"namespace": "api", "subsystem": "handling_service"}, stdinfluxdb.BatchPointsConfig{
+	handlingServiceInflux := kitinfluxdb.New(map[string]string{"namespace": "api", "subsystem": "handling_service"}, stdinfluxdb.BatchPointsConfig{
 		Database:  "goddd",
 		Precision: "s",
 	}, log.NewNopLogger())
+	hsStore := handling.NewStore(handlingServiceInflux, &client)
 	hs = handling.NewService(handlingEvents, handlingEventFactory, handlingEventHandler)
 	hs = handling.NewLoggingService(log.NewContext(logger).With("component", "handling"), hs)
 	hs = handling.NewInstrumentingService(
-		HandlingServiceInflux.NewCounter("request_count"),
-		HandlingServiceInflux.NewHistogram("request_latency_microseconds"),
+		handlingServiceInflux.NewCounter("request_count"),
+		handlingServiceInflux.NewHistogram("request_latency_microseconds"),
 		hs,
+		hsStore,
 	)
-	HandlingServiceInflux.WriteTo(client)
+	handlingServiceInflux.WriteTo(client)
 
 	httpLogger := log.NewContext(logger).With("component", "http")
 
