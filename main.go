@@ -10,12 +10,12 @@ import (
 	"syscall"
 	"time"
 
-	stdprometheus "github.com/prometheus/client_golang/prometheus"
+	stdinfluxdb "github.com/influxdata/influxdb/client/v2"
 	"golang.org/x/net/context"
 	"gopkg.in/mgo.v2"
 
 	"github.com/go-kit/kit/log"
-	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
+	kitinfluxdb "github.com/go-kit/kit/metrics/influx"
 
 	"github.com/marcusolsson/goddd/booking"
 	"github.com/marcusolsson/goddd/cargo"
@@ -102,67 +102,66 @@ func main() {
 	// Facilitate testing by adding some cargos.
 	storeTestData(cargos)
 
-	fieldKeys := []string{"method"}
-
 	var rs routing.Service
 	rs = routing.NewProxyingMiddleware(ctx, *routingServiceURL)(rs)
+
+	// FIXME refactor the initiation of influxdb
+	client, err := stdinfluxdb.NewHTTPClient(stdinfluxdb.HTTPConfig{
+		Addr:     "http://localhost:8086",
+		Username: "user123",
+		Password: "user123",
+	})
+
+	if err != nil {
+		logger.Log("influxdb", "connectTo", "http://influxdb:8086", "failed")
+	} else {
+		fmt.Println("Connect to influxdb!!!!!!!!!")
+	}
 
 	var bs booking.Service
 	bs = booking.NewService(cargos, locations, handlingEvents, rs)
 	bs = booking.NewLoggingService(log.NewContext(logger).With("component", "booking"), bs)
+	BookServiceInflux := kitinfluxdb.New(map[string]string{"namespace": "api", "subsystem": "booking_service"}, stdinfluxdb.BatchPointsConfig{
+		Database:  "goddd",
+		Precision: "s",
+	}, log.NewNopLogger())
 	bs = booking.NewInstrumentingService(
-		kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "api",
-			Subsystem: "booking_service",
-			Name:      "request_count",
-			Help:      "Number of requests received.",
-		}, fieldKeys),
-		kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
-			Namespace: "api",
-			Subsystem: "booking_service",
-			Name:      "request_latency_microseconds",
-			Help:      "Total duration of requests in microseconds.",
-		}, fieldKeys),
+		BookServiceInflux.NewCounter("request_count"),
+		BookServiceInflux.NewHistogram("request_latency_microseconds"),
 		bs,
 	)
+	err = BookServiceInflux.WriteTo(client)
+	if err != nil {
+		fmt.Printf("Error of BookServiceInflux is %s \n\n", err.Error())
+	}
 
 	var ts tracking.Service
+	TrackingServiceInflux := kitinfluxdb.New(map[string]string{"namespace": "api", "subsystem": "tracking_service"}, stdinfluxdb.BatchPointsConfig{
+		Database:  "goddd",
+		Precision: "s",
+	}, log.NewNopLogger())
 	ts = tracking.NewService(cargos, handlingEvents)
 	ts = tracking.NewLoggingService(log.NewContext(logger).With("component", "tracking"), ts)
 	ts = tracking.NewInstrumentingService(
-		kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "api",
-			Subsystem: "tracking_service",
-			Name:      "request_count",
-			Help:      "Number of requests received.",
-		}, fieldKeys),
-		kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
-			Namespace: "api",
-			Subsystem: "tracking_service",
-			Name:      "request_latency_microseconds",
-			Help:      "Total duration of requests in microseconds.",
-		}, fieldKeys),
+		TrackingServiceInflux.NewCounter("request_count"),
+		TrackingServiceInflux.NewHistogram("request_latency_microseconds"),
 		ts,
 	)
+	TrackingServiceInflux.WriteTo(client)
 
 	var hs handling.Service
+	HandlingServiceInflux := kitinfluxdb.New(map[string]string{"namespace": "api", "subsystem": "handling_service"}, stdinfluxdb.BatchPointsConfig{
+		Database:  "goddd",
+		Precision: "s",
+	}, log.NewNopLogger())
 	hs = handling.NewService(handlingEvents, handlingEventFactory, handlingEventHandler)
 	hs = handling.NewLoggingService(log.NewContext(logger).With("component", "handling"), hs)
 	hs = handling.NewInstrumentingService(
-		kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
-			Namespace: "api",
-			Subsystem: "handling_service",
-			Name:      "request_count",
-			Help:      "Number of requests received.",
-		}, fieldKeys),
-		kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
-			Namespace: "api",
-			Subsystem: "handling_service",
-			Name:      "request_latency_microseconds",
-			Help:      "Total duration of requests in microseconds.",
-		}, fieldKeys),
+		HandlingServiceInflux.NewCounter("request_count"),
+		HandlingServiceInflux.NewHistogram("request_latency_microseconds"),
 		hs,
 	)
+	HandlingServiceInflux.WriteTo(client)
 
 	httpLogger := log.NewContext(logger).With("component", "http")
 
@@ -173,7 +172,6 @@ func main() {
 	mux.Handle("/handling/v1/", handling.MakeHandler(ctx, hs, httpLogger))
 
 	http.Handle("/", accessControl(mux))
-	http.Handle("/metrics", stdprometheus.Handler())
 
 	errs := make(chan error, 2)
 	go func() {
