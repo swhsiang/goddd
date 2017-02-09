@@ -23,10 +23,13 @@ import (
 	"github.com/marcusolsson/goddd/inmem"
 	"github.com/marcusolsson/goddd/inspection"
 	"github.com/marcusolsson/goddd/location"
+	"github.com/marcusolsson/goddd/mock"
 	"github.com/marcusolsson/goddd/mongo"
 	"github.com/marcusolsson/goddd/routing"
 	"github.com/marcusolsson/goddd/tracking"
 	"github.com/marcusolsson/goddd/voyage"
+
+	"github.com/carlescere/scheduler"
 )
 
 const (
@@ -125,7 +128,7 @@ func main() {
 		Database:  "goddd",
 		Precision: "s",
 	}, log.NewNopLogger())
-	bsStore := booking.NewStore(bookServiceInflux, &client)
+	bsStore := mock.NewStore(bookServiceInflux, &client)
 	bs = booking.NewInstrumentingService(
 		bookServiceInflux.NewCounter("request_count"),
 		bookServiceInflux.NewHistogram("request_latency_microseconds"),
@@ -138,7 +141,7 @@ func main() {
 		Database:  "goddd",
 		Precision: "s",
 	}, log.NewNopLogger())
-	tsStore := tracking.NewStore(trackingServiceInflux, &client)
+	tsStore := mock.NewStore(trackingServiceInflux, &client)
 	ts = tracking.NewService(cargos, handlingEvents)
 	ts = tracking.NewLoggingService(log.NewContext(logger).With("component", "tracking"), ts)
 	ts = tracking.NewInstrumentingService(
@@ -153,7 +156,7 @@ func main() {
 		Database:  "goddd",
 		Precision: "s",
 	}, log.NewNopLogger())
-	hsStore := handling.NewStore(handlingServiceInflux, &client)
+	hsStore := mock.NewStore(handlingServiceInflux, &client)
 	hs = handling.NewService(handlingEvents, handlingEventFactory, handlingEventHandler)
 	hs = handling.NewLoggingService(log.NewContext(logger).With("component", "handling"), hs)
 	hs = handling.NewInstrumentingService(
@@ -162,7 +165,22 @@ func main() {
 		hs,
 		hsStore,
 	)
-	handlingServiceInflux.WriteTo(client)
+
+	var storeArr []*mock.Store
+	storeArr = append(storeArr, bsStore)
+	storeArr = append(storeArr, tsStore)
+	storeArr = append(storeArr, hsStore)
+
+	job := func() {
+		for _, val := range storeArr {
+			val.SaveMetrics()
+
+		}
+
+		fmt.Println("Send metrics")
+	}
+
+	scheduler.Every(1).Minutes().Run(job)
 
 	httpLogger := log.NewContext(logger).With("component", "http")
 

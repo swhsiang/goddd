@@ -80,3 +80,5 @@ import:
 - package: golang.org/x/net
   subpackages:
   - context
+- package: github.com/carlescere/scheduler
+  version: ^0.1.0

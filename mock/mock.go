@@ -4,6 +4,11 @@ import (
 	"github.com/marcusolsson/goddd/cargo"
 	"github.com/marcusolsson/goddd/location"
 	"github.com/marcusolsson/goddd/voyage"
+
+	"fmt"
+
+	kitinfluxdb "github.com/go-kit/kit/metrics/influx"
+	stdinfluxdb "github.com/influxdata/influxdb/client/v2"
 )
 
 // CargoRepository is a mock cargo repository.
@@ -100,4 +105,27 @@ type RoutingService struct {
 func (s *RoutingService) FetchRoutesForSpecification(rs cargo.RouteSpecification) []cargo.Itinerary {
 	s.FetchRoutesInvoked = true
 	return s.FetchRoutesFn(rs)
+}
+
+// Store manage metrics
+type Store struct {
+	*kitinfluxdb.Influx
+	client *stdinfluxdb.Client
+}
+
+// SaveMetrics send metrics to influxdb.
+func (store *Store) SaveMetrics() {
+	// NOTE: After send metrics to influxdb, the counter will be reset
+	err := store.Influx.WriteTo(*store.client)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+}
+
+// NewStore returns an instance of Store struct
+func NewStore(influx *kitinfluxdb.Influx, client *stdinfluxdb.Client) *Store {
+	return &Store{
+		Influx: influx,
+		client: client,
+	}
 }
