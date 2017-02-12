@@ -5,7 +5,7 @@ import (
 	"github.com/marcusolsson/goddd/location"
 	"github.com/marcusolsson/goddd/voyage"
 
-	"fmt"
+	"time"
 
 	kitinfluxdb "github.com/go-kit/kit/metrics/influx"
 	stdinfluxdb "github.com/influxdata/influxdb/client/v2"
@@ -114,12 +114,13 @@ type Store struct {
 }
 
 // SaveMetrics send metrics to influxdb.
-func (store *Store) SaveMetrics() {
+func (store *Store) SaveMetrics(w kitinfluxdb.BatchPointsWriter) {
 	// NOTE: After send metrics to influxdb, the counter will be reset
-	err := store.Influx.WriteTo(*store.client)
-	if err != nil {
-		fmt.Println(err.Error())
-	}
+
+	tickChan := time.NewTicker(time.Minute * 1).C
+	go func() {
+		store.Influx.WriteLoop(tickChan, w)
+	}()
 }
 
 // NewStore returns an instance of Store struct

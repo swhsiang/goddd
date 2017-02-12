@@ -28,8 +28,6 @@ import (
 	"github.com/marcusolsson/goddd/routing"
 	"github.com/marcusolsson/goddd/tracking"
 	"github.com/marcusolsson/goddd/voyage"
-
-	"github.com/carlescere/scheduler"
 )
 
 const (
@@ -166,21 +164,9 @@ func main() {
 		hsStore,
 	)
 
-	var storeArr []*mock.Store
-	storeArr = append(storeArr, bsStore)
-	storeArr = append(storeArr, tsStore)
-	storeArr = append(storeArr, hsStore)
-
-	job := func() {
-		for _, val := range storeArr {
-			val.SaveMetrics()
-
-		}
-
-		fmt.Println("Send metrics")
-	}
-
-	scheduler.Every(1).Minutes().Run(job)
+	bsStore.SaveMetrics(client)
+	tsStore.SaveMetrics(client)
+	hsStore.SaveMetrics(client)
 
 	httpLogger := log.NewContext(logger).With("component", "http")
 
