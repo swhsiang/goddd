@@ -35,6 +35,10 @@ const (
 	defaultRoutingServiceURL = "http://localhost:7878"
 	defaultMongoDBURL        = "127.0.0.1"
 	defaultDBName            = "dddsample"
+
+	defaultInfluxdbURL      = "http://influxdb:8086"
+	defaultInfluxdbUsername = "root"
+	defaultInfluxdbPassword = "random"
 )
 
 func main() {
@@ -43,6 +47,14 @@ func main() {
 		rsurl  = envString("ROUTINGSERVICE_URL", defaultRoutingServiceURL)
 		dburl  = envString("MONGODB_URL", defaultMongoDBURL)
 		dbname = envString("DB_NAME", defaultDBName)
+
+		influxdbURLEnv      = envString("INFLUXDB_URL", defaultInfluxdbURL)
+		influxdbUsernameEnv = envString("INFLUXDB_USERNAME", defaultInfluxdbUsername)
+		influxdbPasswordEnv = envString("INFLUXDB_PASSWORD", defaultInfluxdbPassword)
+
+		influxdbURL      = flag.String("influxdb.url", influxdbURLEnv, "address of influxdb")
+		influxdbUsername = flag.String("influxdb.username", influxdbUsernameEnv, "username of influxdb")
+		influxdbPassword = flag.String("influxdb.password", influxdbPasswordEnv, "password of influxdb")
 
 		httpAddr          = flag.String("http.addr", ":"+addr, "HTTP listen address")
 		routingServiceURL = flag.String("service.routing", rsurl, "routing service URL")
@@ -67,6 +79,19 @@ func main() {
 		voyages        voyage.Repository
 		handlingEvents cargo.HandlingEventRepository
 	)
+
+	// Init the connection of influxdb
+	client, err := stdinfluxdb.NewHTTPClient(stdinfluxdb.HTTPConfig{
+		Addr:     *influxdbURL,
+		Username: *influxdbUsername,
+		Password: *influxdbPassword,
+	})
+
+	if err != nil {
+		fmt.Println("address of influxdb", *influxdbURL, "username", *influxdbUsername, "password", *influxdbPassword, "error message", err)
+	} else {
+		fmt.Println("address of influxdb", *influxdbURL, "username", *influxdbUsername, "password", *influxdbPassword)
+	}
 
 	if *inmemory {
 		cargos = inmem.NewCargoRepository()
@@ -105,19 +130,6 @@ func main() {
 
 	var rs routing.Service
 	rs = routing.NewProxyingMiddleware(ctx, *routingServiceURL)(rs)
-
-	// FIXME refactor the initiation of influxdb
-	client, err := stdinfluxdb.NewHTTPClient(stdinfluxdb.HTTPConfig{
-		Addr:     "http://localhost:8086",
-		Username: "user123",
-		Password: "user123",
-	})
-
-	if err != nil {
-		logger.Log("influxdb", "connectTo", "http://influxdb:8086", "failed")
-	} else {
-		fmt.Println("Connect to influxdb!!!!!!!!!")
-	}
 
 	var bs booking.Service
 	bs = booking.NewService(cargos, locations, handlingEvents, rs)
